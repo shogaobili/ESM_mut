@@ -1,15 +1,29 @@
+import os
+
+os.environ['HF_HOME'] = 'D:/hugging face'
+os.environ['TRANSFORMERS_CACHE'] = 'D:/hugging face/cache'
+
 import torch
 import torch.nn as nn
-
 import esm
 
-from modeling.utils import FFNLayer
+class FFNLayer(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super(FFNLayer, self).__init__()
+        self.linear1 = nn.Linear(input_dim, output_dim)
+        self.relu = nn.ReLU()
+        self.linear2 = nn.Linear(output_dim, output_dim)
+
+    def forward(self, x):
+        x = self.linear1(x)
+        x = self.relu(x)
+        x = self.linear2(x)
+        return x
 
 class ESMBackbone(nn.Module):
     def __init__(self, args):
         super().__init__()
         self.args = args
-        #getattr()，动态调用。getattr(object, name[, default]) -> value，name动态访问属性,以便更加模块化。
         self.backbone, self.alphabet = getattr(esm.pretrained, args.backbone)()
         self.num_layers = len(self.backbone.layers)
         self.hdim = self.backbone.lm_head.dense.weight.shape[1]
@@ -20,18 +34,15 @@ class ESMBackbone(nn.Module):
                 if i < args.freeze_at:
                     layer.requires_grad_(False)
 
-        ## prepare feature extractor
         self.ln = nn.LayerNorm(self.hdim)
         self.bb_adapter = FFNLayer(self.hdim, self.hdim)
 
-        ## prepare penultimate aa_type embeddings
         self.aa_expand = args.aa_expand
         if self.aa_expand == 'backbone':
             self.aa_embed = self.backbone.lm_head.weight.requires_grad_(True)
             self.esm_to_our_aatype = [self.alphabet.get_idx(aa) for aa in one_letters]
             self.ln_head = nn.LayerNorm(self.get_aa_embed_dim())
 
-        ## avoid distributed issues
         self.backbone.lm_head.requires_grad_(False)
         self.backbone.contact_head.requires_grad_(False)
 
@@ -46,10 +57,10 @@ class ESMBackbone(nn.Module):
 
     def forward(self, x, batch):
         x = self.backbone(x, repr_layers=[self.num_layers])['representations'][self.num_layers]
-        if len(x.shape) == 4:  # remove MSAs
+        if len(x.shape) == 4:
             x = x[:,0]
         x = self.bb_adapter(self.ln(x))
-        x = x[:, 1:-1]  # remove SOS and EOS tokens
+        x = x[:, 1:-1]
         ret = {'bb_feat': x}
         if self.aa_expand == 'backbone':
             ret['aa_embed'] = self.get_aa_embed()
