@@ -24,7 +24,10 @@ class ESMBackbone(nn.Module):
     def __init__(self, args):
         super().__init__()
         self.args = args
-        self.backbone, self.alphabet = getattr(esm.pretrained, args.backbone)()
+        # self.backbone, self.alphabet = getattr(esm.pretrained, args.backbone)()
+        # load from local path D:/hugging face/esm1b_t33_650M_UR50S
+        self.backbone, self.alphabet = esm.pretrained.load_model_and_alphabet_local('D:/hugging face/esm1b_t33_650M_UR50S.pt')
+
         self.num_layers = len(self.backbone.layers)
         self.hdim = self.backbone.lm_head.dense.weight.shape[1]
 
